@@ -1,4 +1,4 @@
-# FileOptimizer True Portable Builder — v1.0
+# FileOptimizer True Portable Builder — v1.1
 
 ## What it builds
 
@@ -30,7 +30,7 @@ FileOptimizerPortable/
 
 ### Correct official source
 
-Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkhokkho/files/FileOptimizer/) and [maintained source tree](https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/), **not the 2015-era svn2github mirror**. Initial expected stable is `17.20.2876` (Oct 18, 2026). The builder downloads `FileOptimizerFull.7z.exe` (official non-installer), verifies its publisher-listed SHA-256, and unpacks it using 7-Zip **without running the self-extractor or installer**. Building the actual Embarcadero C++Builder code is unnecessary and not attempted.
+Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkhokkho/files/FileOptimizer/) and [maintained source tree](https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/), **not the 2015-era svn2github mirror**. Current confirmed release is `17.30.2881` (Oct 20, 2026). The builder downloads `FileOptimizerFull.7z.exe` (official non-installer), verifies a publisher-listed or manually supplied SHA-256 **when available**; otherwise records its computed SHA-256 and performs official HTTPS, 7-Zip integrity, and package-structure checks (these are NOT equivalent to independent checksum verification); then unpacks it using 7-Zip **without running the self-extractor or installer**. Building the actual Embarcadero C++Builder code is unnecessary and not attempted.
 
 ### Steps in GitHub
 
@@ -38,7 +38,7 @@ Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkho
 2. Extract **this builder kit** ZIP and copy all contents into the repository. Include the `.github/` folder.
 3. Commit and push in GitHub Desktop.
 4. Open the repository **Actions** tab; choose **Build FileOptimizer Portable (Manual)**.
-5. Click **Run workflow** and use `release_version=latest`. If SourceForge version discovery is blocked, rerun with a confirmed numeric release, such as `17.20.2876`.
+5. Click **Run workflow** and use `release_version=17.30.2881` (recommended first test). You may choose `latest` later; if SourceForge version discovery is blocked, the builder uses its last confirmed release as a clearly labeled fallback. The optional `expected_sha256` field is blank by default.
 6. When the job succeeds, download the artifact `FileOptimizerPortable-Windows-x64`.
 7. Extract the **inner** `FileOptimizerPortable-<version>-x64.zip` to `X:\PortableApps\` (the directory containing `PortableApps.com`).
 8. Refresh PortableApps Menu icons and start **FileOptimizer Portable**.
@@ -59,8 +59,10 @@ Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkho
 
 ### Checks and troubleshooting
 
-- The builder validates the official SHA-256; initial 17.20.2876 published value is pinned for reliability.
-- It checks the extracted vendor `FileOptimizer64.exe`, `Plugins64/`, official icon, compiled launcher, AppInfo metadata and output ZIP structure.
+- **v1.1 fixes SourceForge 403 on the checksum webpage.** If a published checksum is accessible, the builder verifies it. The earlier 17.20.2876 pinned hash is retained. A manually supplied `expected_sha256` is always checked against the downloaded file.
+- **Important security distinction:** When SourceForge blocks checksum retrieval and no independent expected hash is provided, v1.1 can still build from the official HTTPS release after a 7-Zip archive test, executable/plugin checks and recording the download's calculated SHA-256. This does **not** independently authenticate the archive. The build log and `Other/BUILD-MANIFEST.txt` say `OFFICIAL-HTTPS-UNPINNED` in that case. For a fully hash-verified build, obtain the SHA-256 from the official SourceForge file detail screen and paste it into the optional `expected_sha256` workflow field; mismatches fail immediately.
+- Any future version still depends on the upstream archive format. The builder does not run the publisher's self-extracting installer.
+- It tests the official archive with `7z t`, then checks the extracted vendor `FileOptimizer64.exe`, `Plugins64/`, official icon, compiled launcher, AppInfo metadata and output ZIP structure.
 - If SourceForge changes the archive layout, the build **stops with a specific diagnostic**. It will not silently omit plugins.
 - The package is intentionally large (the original 111 MB compressed distribution plus launcher); an artifact near that size is normal.
 - No Windows runtime tests were performed here. Verify a complete optimization session, INI persistence, logs, plugins, PortableApps Menu, and Windows traces yourself.
@@ -68,3 +70,7 @@ Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkho
 Read [docs/TESTING.md](docs/TESTING.md) before using this build on irreplaceable documents.
 
 This is a community packaging kit, not an official PortableApps.com distribution. The vendor's code and bundled tools retain their respective upstream licenses.
+
+### If the first build was blocked by SourceForge
+
+The October 21, 2026 GitHub Action log reported `403 Forbidden` while fetching a *webpage* containing the checksum; the actual program download had not started. v1.1 separates these steps, retries only official SourceForge download endpoints, and provides an optional strict checksum field. It does not treat an automatically computed hash as publisher verification.

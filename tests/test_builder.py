@@ -5,7 +5,7 @@ class BuilderTests(unittest.TestCase):
     def test_workflow(self):
         s=(ROOT/'.github/workflows/build-fileoptimizer-portable.yml').read_text(encoding='utf-8')
         self.assertIn('workflow_dispatch:',s)
-        self.assertIn('actions/upload-artifact@v4',s)
+        self.assertIn('actions/upload-artifact@v6',s)
         self.assertIn('windows-2022',s)
         self.assertNotIn('schedule:',s)
     def test_official_url_and_checksum(self):
@@ -39,4 +39,25 @@ class BuilderTests(unittest.TestCase):
     def test_local_unicode_reading(self):
         for p in (ROOT/'README.md', ROOT/'docs/TESTING.md'):
             self.assertTrue(p.read_text(encoding='utf-8'))
+    def test_blocked_checksum_page_does_not_always_fail(self):
+        s=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        self.assertIn('OFFICIAL-HTTPS-UNPINNED',s)
+        self.assertIn('NOT independently verified',s)
+        self.assertIn('7z archive-integrity test',s)
+        self.assertNotIn('No published SourceForge SHA256 could be verified',s)
+    def test_manual_checksum_is_verified(self):
+        s=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        workflow=(ROOT/'.github/workflows/build-fileoptimizer-portable.yml').read_text(encoding='utf-8')
+        self.assertIn('ExpectedSha256',s)
+        self.assertIn("$actual -ne $expected",s)
+        self.assertIn('expected_sha256:',workflow)
+        self.assertIn('SHA256_INPUT',workflow)
+    def test_download_sources_are_official(self):
+        s=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        self.assertIn("$sourcePage + '?use_mirror=pilotfiber'",s)
+        self.assertIn('https://sourceforge.net/projects/nikkhokkho/files/FileOptimizer/',s)
+    def test_node24_actions(self):
+        s=(ROOT/'.github/workflows/build-fileoptimizer-portable.yml').read_text(encoding='utf-8')
+        self.assertIn('actions/checkout@v6',s)
+        self.assertIn('actions/upload-artifact@v6',s)
 if __name__=='__main__': unittest.main()

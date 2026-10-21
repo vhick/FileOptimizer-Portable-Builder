@@ -1,13 +1,17 @@
-param([string]$ReleaseVersion = 'latest')
+param([string]$ReleaseVersion = 'latest', [string]$ExpectedSha256 = '')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $ProgressPreference = 'SilentlyContinue'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 if ($ReleaseVersion -ne 'latest' -and $ReleaseVersion -notmatch '^\d+\.\d+\.\d+$') {
-    throw 'release_version must be latest or an official three-part version such as 17.20.2876.'
+    throw 'release_version must be latest or an official three-part version such as 17.30.2881.'
 }
-$headers = @{ 'User-Agent'='FileOptimizer-Portable-Community-Builder/1.0' }
+$headers = @{ 'User-Agent'='FileOptimizer-Portable-Community-Builder/1.1' }
+if ($ExpectedSha256 -and $ExpectedSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
+    throw 'expected_sha256 must be blank or exactly 64 hexadecimal characters.'
+}
+$ExpectedSha256 = $ExpectedSha256.ToLowerInvariant()
 function Resolve-ReleaseVersion {
     param([string]$Requested)
     if ($Requested -ne 'latest') { return $Requested }
@@ -29,7 +33,12 @@ function Resolve-ReleaseVersion {
             }
         } catch { Write-Warning ('SourceForge RSS lookup failed: ' + $_.Exception.Message) }
     }
-    if ($versions.Count -eq 0) { throw 'Cannot determine latest official version from SourceForge. Retry with release_version=17.20.2876 (or a confirmed newer version).' }
+    if ($versions.Count -eq 0) {
+        # Pinned fallback only when SourceForge blocks both discovery endpoints.
+        # This is NOT proof of the newest release; it is a known specific release.
+        Write-Warning 'SourceForge version discovery unavailable. Falling back to last confirmed 17.30.2881; it may not be the newest release.'
+        return '17.30.2881'
+    }
     $sorted = @($versions | Sort-Object -Unique | Sort-Object { [version]$_ } -Descending)
     return [string]$sorted[0]
 }
@@ -40,20 +49,31 @@ $asset = 'FileOptimizerFull.7z.exe'
 $downloadUrl = "https://downloads.sourceforge.net/project/nikkhokkho/FileOptimizer/$version/$asset"
 $sourcePage = "https://sourceforge.net/projects/nikkhokkho/files/FileOptimizer/$version/$asset/download"
 # Upstream-published SHA256 for initial version, grounded in official SourceForge file page.
-# For newer versions require a SHA256 from that version's SourceForge file page.
+# For newer versions: accept a published hash if accessible or an explicit, manually verified SHA256.
 $knownHashes = @{ '17.20.2876' = '9f0a3aef27adece2ab3cedbb004c084ad9e1a36f79155dd3e0e2d7fc0182fb72' }
 $expected = $null
 try {
     $fileInfo = Invoke-WebRequest -UseBasicParsing -Uri $sourcePage -Headers @{ 'User-Agent' = 'Mozilla/5.0 FileOptimizer-Portable-Builder' } -TimeoutSec 45
     $asText = [string]$fileInfo.Content
-    $match = [regex]::Match($asText, '(?is)SHA-256:[\s\S]{0,500}?([a-fA-F0-9]{64})')
+    $match = [regex]::Match($asText, '(?is)SHA-256:[\s\S]{0,180}?([a-fA-F0-9]{64})')
     if ($match.Success) { $expected = $match.Groups[1].Value.ToLowerInvariant() }
 } catch { Write-Warning ('Unable to read published SourceForge checksum: ' + $_.Exception.Message) }
 if ($knownHashes.ContainsKey($version)) {
     if ($expected -and $expected -ne $knownHashes[$version]) { throw 'Upstream checksum differs from pinned expected checksum.' }
     $expected = $knownHashes[$version]
 }
-if (-not $expected) { throw "No published SourceForge SHA256 could be verified for $version. Builder will not package an unverified download." }
+if ($ExpectedSha256) {
+    if ($expected -and $ExpectedSha256 -ne $expected) { throw 'Manually supplied SHA-256 conflicts with the published/pinned hash. Check the release and do not bypass.' }
+    $expected = $ExpectedSha256
+}
+# A SourceForge Cloudflare 403 on its *webpage* must not be misreported as a download failure.
+# If no independently known hash can be retrieved, we will validate official HTTPS origin,
+# archive integrity and internal structure, compute SHA-256, and transparently mark the build
+# as UNPINNED rather than pretending the computed hash authenticates its own download.
+$verificationLevel = if ($expected) { 'PINNED-SHA256' } else { 'OFFICIAL-HTTPS-UNPINNED' }
+if (-not $expected) {
+    Write-Warning 'SourceForge SHA-256 unavailable. Continuing with official HTTPS source and archive/content validation only. The SHA-256 will be recorded, NOT independently verified. Supply expected_sha256 for strict verification.'
+}
 $work = Join-Path $repoRoot 'build-work'
 $dist = Join-Path $repoRoot 'dist'
 $stage = Join-Path $work 'FileOptimizerPortable'
@@ -65,16 +85,46 @@ if (Test-Path $work) { Remove-Item -LiteralPath $work -Recurse -Force }
 if (Test-Path $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $work,$stage,$app,$appInfo,$data,$srcDir,$dist, (Join-Path $data 'Settings'),(Join-Path $data 'Logs'),(Join-Path $data 'Temp') | Out-Null
 $archive = Join-Path $work $asset
-Write-Host "Downloading $downloadUrl"
-Invoke-WebRequest -UseBasicParsing -Uri $downloadUrl -Headers $headers -OutFile $archive -TimeoutSec 1800
-if ((Get-Item -LiteralPath $archive).Length -lt 40000000) { throw 'Official full distribution is unexpectedly small (or HTML download error).' }
+# All retry URLs are official SourceForge endpoints; never fetch from third-party sites.
+# SourceForge documents ?use_mirror as its supported mirror-switching mechanism.
+$downloadCandidates = @(
+    $downloadUrl,
+    $sourcePage,
+    ($sourcePage + '?use_mirror=pilotfiber'),
+    ($sourcePage + '?use_mirror=netix')
+)
+$downloadOk = $false
+foreach ($candidate in $downloadCandidates) {
+    try {
+        Write-Host "Downloading official SourceForge release: $candidate"
+        if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+        Invoke-WebRequest -UseBasicParsing -Uri $candidate -Headers $headers -OutFile $archive -TimeoutSec 1800 -MaximumRedirection 10
+        if ((Get-Item -LiteralPath $archive).Length -lt 40000000) {
+            throw 'Download is unexpectedly small; possible HTML/error response instead of the full archive.'
+        }
+        $downloadOk = $true
+        break
+    } catch {
+        Write-Warning ('Official SourceForge download attempt failed: ' + $_.Exception.Message)
+        if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+    }
+}
+if (-not $downloadOk) { throw 'All official SourceForge download endpoints failed. This is separate from checksum-page HTTP 403; retry later or use a different runner.' }
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-if ($actual -ne $expected) { throw "Official SHA-256 mismatch! Expected $expected, actual $actual" }
-Write-Host "PASS: Official upstream SHA-256 $actual"
+if ($expected) {
+    if ($actual -ne $expected) { throw "SHA-256 mismatch! Expected $expected, actual $actual. DO NOT USE this download." }
+    Write-Host "PASS: Independently expected SHA-256 matches: $actual"
+} else {
+    Write-Warning "UNPINNED SHA-256 (calculated locally; NOT independently verified): $actual"
+}
 # Extract SFX as archive; do NOT execute the vendor SFX on the GitHub runner.
 $seven = @('C:\Program Files\7-Zip\7z.exe','C:\Program Files (x86)\7-Zip\7z.exe') | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $seven) { $cmd = Get-Command 7z.exe -ErrorAction SilentlyContinue; if ($cmd) { $seven = $cmd.Source } }
 if (-not $seven) { throw '7-Zip CLI is missing on Windows runner. Do not execute the vendor SFX as an installer.' }
+# Test decompression integrity before unpacking, including when SourceForge checksum is blocked.
+& $seven t '-bd' $archive
+if ($LASTEXITCODE -ne 0) { throw 'Official 7-Zip SFX failed 7z archive-integrity test.' }
+Write-Host 'PASS: 7-Zip archive-integrity test'
 $extracted = Join-Path $work 'extracted'
 New-Item -ItemType Directory -Force -Path $extracted | Out-Null
 & $seven x '-y' '-bd' "-o$extracted" $archive
@@ -162,7 +212,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Extract-OfficialIcon.ps1') -Des
 @"
 FileOptimizer portable build
 Official upstream: $downloadUrl
-Official upstream SHA256: $expected
+Download SHA256 (computed): $actual`nVerification level: $verificationLevel`nIndependently known expected SHA256: $(if ($expected) { $expected } else { '[not available - downloaded from official SourceForge HTTPS and 7z-validated]' })
 Release version: $version
 Source code (maintained): https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/
 Build approach: official precompiled SFX extracted as an archive; neither installed nor executed on runner.
@@ -212,4 +262,4 @@ try {
     }
 } finally { $z.Dispose() }
 Write-Host "SUCCESS: $zip"
-Write-Host 'Windows GUI and full plugin portability must still be tested on the target PC.'
+Write-Host "Source verification: $verificationLevel; SHA256 $actual"`nWrite-Host 'Windows GUI and full plugin portability must still be tested on the target PC.'

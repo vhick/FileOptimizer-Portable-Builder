@@ -3,9 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'latest or official SourceForge version (example: 17.20.2876)'
+        description: 'latest or official SourceForge version (example: 17.30.2881)'
         required: true
         default: 'latest'
+        type: string
+      expected_sha256:
+        description: 'Optional: official SHA-256 (64 hex). Leave blank for official HTTPS + archive checks when SourceForge blocks checksums.'
+        required: false
+        default: ''
         type: string
 permissions:
   contents: read
@@ -16,7 +21,7 @@ jobs:
     timeout-minutes: 55
     steps:
       - name: Checkout builder repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Check builder files
         shell: pwsh
         run: |
@@ -25,10 +30,11 @@ jobs:
         shell: pwsh
         env:
           VERSION_INPUT: ${{ inputs.release_version }}
+          SHA256_INPUT: ${{ inputs.expected_sha256 }}
         run: |
-          ./scripts/build.ps1 -ReleaseVersion "$env:VERSION_INPUT"
+          ./scripts/build.ps1 -ReleaseVersion "$env:VERSION_INPUT" -ExpectedSha256 "$env:SHA256_INPUT"
       - name: Upload complete portable ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: FileOptimizerPortable-Windows-x64
           path: dist/FileOptimizerPortable-*.zip
