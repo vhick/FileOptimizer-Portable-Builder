@@ -1,0 +1,36 @@
+name: Build FileOptimizer Portable (Manual)
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'latest or official SourceForge version (example: 17.20.2876)'
+        required: true
+        default: 'latest'
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Official FileOptimizer Portable ZIP
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+      - name: Check builder files
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+      - name: Build and verify official portable ZIP
+        shell: pwsh
+        env:
+          VERSION_INPUT: ${{ inputs.release_version }}
+        run: |
+          ./scripts/build.ps1 -ReleaseVersion "$env:VERSION_INPUT"
+      - name: Upload complete portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: FileOptimizerPortable-Windows-x64
+          path: dist/FileOptimizerPortable-*.zip
+          if-no-files-found: error
+          retention-days: 1

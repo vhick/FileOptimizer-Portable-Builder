@@ -1,0 +1,5 @@
+build-work/
+dist/
+*.user
+*.suo
+__pycache__/
