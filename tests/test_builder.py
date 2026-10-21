@@ -61,3 +61,29 @@ class BuilderTests(unittest.TestCase):
         self.assertIn('actions/checkout@v6',s)
         self.assertIn('actions/upload-artifact@v6',s)
 if __name__=='__main__': unittest.main()
+
+# Additional v1.2 portability checks (the CI compiler still performs the authoritative C# check).
+class TraceGuardTests(unittest.TestCase):
+    def test_tracing_integrated(self):
+        launcher=(ROOT/'launcher/FileOptimizerPortable.cs').read_text(encoding='utf-8')
+        for item in ('new TraceGuardSession(Data, App)', 'traceGuard.Finish()', 'WEBVIEW2_USER_DATA_FOLDER', 'Data', 'Browser'):
+            self.assertIn(item, launcher)
+    def test_compiled_and_packaged(self):
+        builder=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        self.assertIn("(Join-Path $repoRoot 'launcher/TraceGuard.cs')",builder)
+        self.assertIn("Copy-Item -LiteralPath (Join-Path $repoRoot 'launcher/TraceGuard.cs')",builder)
+    def test_targeted_registry_and_file_safety(self):
+        source=(ROOT/'launcher/TraceGuard.cs').read_text(encoding='utf-8')
+        for item in ('FEATURE_BROWSER_EMULATION','FileOptimizer64.exe','FileOptimizer32.exe','FileAttributes.ReparsePoint', 'VerifiedCopyAcrossVolumes','Registry.CurrentUser'):
+            self.assertIn(item,source)
+        self.assertNotIn('Registry.LocalMachine.Delete',source)
+        self.assertNotIn('Registry.CurrentUser.DeleteSubKeyTree',source)
+    def test_registry_crash_marker(self):
+        source=(ROOT/'launcher/TraceGuard.cs').read_text(encoding='utf-8')
+        self.assertIn('registry-recovery.bin',source)
+        self.assertIn('RestorePreviousRegistrySession(backupFile, report)',source)
+        self.assertIn('SaveRegistryRecovery(backupFile)',source)
+    def test_packaging_mentions_traceguard(self):
+        source=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        self.assertIn('TraceGuard writes per-run reports',source)
+        self.assertIn('TraceGuard v1.2:',source)

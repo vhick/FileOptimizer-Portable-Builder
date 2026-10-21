@@ -1,4 +1,4 @@
-# FileOptimizer True Portable Builder — v1.1
+# FileOptimizer True Portable Builder — v1.2
 
 ## What it builds
 
@@ -20,13 +20,46 @@ FileOptimizerPortable/
 │       └── other original vendor files
 ├── Data/
 │   ├── Settings/            (persistent INI options)
-│   ├── Logs/                (persistent logs)
-│   └── Temp/                (child-process temp area)
+│   ├── Logs/                (persistent logs and TraceGuard reports)
+│   ├── Temp/                (child-process temp area)
+│   ├── Browser/WebView2/    (child-process browser data)
+│   └── TraceGuard/          (recoverable detected host state)
 ├── Other/
 │   ├── Source/              (launcher and icon export source)
 │   └── BUILD-MANIFEST.txt
 └── START-HERE.txt
 ```
+
+### TraceGuard v1.2 — what is (and is not) monitored
+
+TraceGuard is integrated into the launcher. You do not have to install a driver, start
+PowerShell, or run an external tracking program. On every root-launcher session it takes
+**before/after** snapshots of bounded locations: top-level entries in Roaming AppData,
+Local AppData, LocalLow, Windows TEMP and FileOptimizer's own App folder, including
+subtrees whose name contains `FileOptimizer` or `nikkho`, plus selected
+`%USERPROFILE%` FileOptimizer INI/log files. It also compares FileOptimizer's known
+HKCU registry namespaces and two FileOptimizer-specific browser-emulation values.
+It does **not** audit the whole registry, every subdirectory, or all child-process operations.
+
+The launcher gives a child-process-only `WEBVIEW2_USER_DATA_FOLDER` override
+pointing to `Data/Browser/WebView2`, as supported by Microsoft WebView2. FileOptimizer
+may also use an older Internet Explorer control, which can create an application-specific
+`FEATURE_BROWSER_EMULATION` registry value. TraceGuard snapshots only the two
+upstream executable-name values there and restores them after the process exits.
+Previous-session registry recovery is attempted automatically after abnormal termination.
+
+TraceGuard automatically **moves newly created folders with exact FileOptimizer-specific
+names** found directly beneath monitored roots into `Data/TraceGuard/Recovered`
+(never discards their contents). It will not touch existing folders, symlink/reparse
+paths, generic Microsoft/Edge/Qt browser caches, or user-selected files elsewhere.
+It uses a bounded, SHA-256-verified copy for cross-drive recovery and leaves the
+host original untouched if verification fails. Uncertain traces are documented for
+review, rather than deleted. Reports are written to `Data/Logs/TraceGuard-*.txt`.
+A monitor cannot reliably prove every trace was created by one app from snapshots alone;
+for detailed attribution, use Microsoft Sysinternals Process Monitor manually.
+
+**This is not a certified zero-host-traces build.** A Windows runtime test with a full
+optimization job is still needed. Logs contain filesystem paths: review before sharing.
 
 ### Correct official source
 
@@ -55,11 +88,12 @@ Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkho
 - Registry overrides at `HKLM/HKCU\Software\FileOptimizer` may affect settings on a PC with a separate installation. The launcher neither modifies nor removes those settings.
 - Program output changes the user-selected **original** files. This is intentional functionality, NOT host contamination. Keep original files in the Recycle Bin where supported and first optimize copies.
 - No autorun, Explorer shell registration, scheduled job, or background optimization is added by the builder.
+- TraceGuard's registry recovery backup is stored in `Data/TraceGuard/registry-recovery.bin` only while a session is active; if an interruption occurs, relaunch on the **same computer** before moving the portable directory. A recovery failure leaves the marker for review.
 - Windows itself may record execution history; zero host traces cannot be guaranteed by a launcher.
 
 ### Checks and troubleshooting
 
-- **v1.1 fixes SourceForge 403 on the checksum webpage.** If a published checksum is accessible, the builder verifies it. The earlier 17.20.2876 pinned hash is retained. A manually supplied `expected_sha256` is always checked against the downloaded file.
+- **v1.1 fixes SourceForge 403 on the checksum webpage (retained in v1.2).** If a published checksum is accessible, the builder verifies it. The earlier 17.20.2876 pinned hash is retained. A manually supplied `expected_sha256` is always checked against the downloaded file.
 - **Important security distinction:** When SourceForge blocks checksum retrieval and no independent expected hash is provided, v1.1 can still build from the official HTTPS release after a 7-Zip archive test, executable/plugin checks and recording the download's calculated SHA-256. This does **not** independently authenticate the archive. The build log and `Other/BUILD-MANIFEST.txt` say `OFFICIAL-HTTPS-UNPINNED` in that case. For a fully hash-verified build, obtain the SHA-256 from the official SourceForge file detail screen and paste it into the optional `expected_sha256` workflow field; mismatches fail immediately.
 - Any future version still depends on the upstream archive format. The builder does not run the publisher's self-extracting installer.
 - It tests the official archive with `7z t`, then checks the extracted vendor `FileOptimizer64.exe`, `Plugins64/`, official icon, compiled launcher, AppInfo metadata and output ZIP structure.

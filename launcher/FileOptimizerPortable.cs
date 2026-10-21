@@ -1,5 +1,6 @@
 // Community portable launcher for FileOptimizer. Original app binary and bundled plugins are unchanged.
-// Windows/.NET Framework 4.8 only. No install, system-wide environment changes, registry cleanup or automation.
+// Windows/.NET Framework 4.8 only. No installation or system-wide environment changes.
+// TraceGuard snapshots scoped host locations and protects narrowly identified values.
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -105,6 +106,7 @@ internal static class FileOptimizerPortable
                     AtomicCopy(appFile, dataFile);
             }
             CopyDataToApp();
+            TraceGuardSession traceGuard = new TraceGuardSession(Data, App);
             int exitCode;
             try
             {
@@ -113,6 +115,10 @@ internal static class FileOptimizerPortable
                 psi.WorkingDirectory = App; // required for relative Plugins64 paths
                 psi.EnvironmentVariables["TEMP"] = tempDir;
                 psi.EnvironmentVariables["TMP"] = tempDir;
+                // Microsoft documents this process-only override for WebView2.
+                string browserData = Path.Combine(Data, "Browser", "WebView2");
+                Directory.CreateDirectory(browserData);
+                psi.EnvironmentVariables["WEBVIEW2_USER_DATA_FOLDER"] = browserData;
                 psi.Arguments = QuoteArgs(args);
                 using (Process p = Process.Start(psi))
                 {
@@ -121,7 +127,11 @@ internal static class FileOptimizerPortable
                     exitCode = p.ExitCode;
                 }
             }
-            finally { CopyAppToData(); } // Capture preferences/logs even on unexpected child failure.
+            finally
+            {
+                try { CopyAppToData(); } // Capture settings even on failed child process.
+                finally { traceGuard.Finish(); }
+            }
             return exitCode;
         }
         catch (Exception ex) { Alert(ex.Message + "\n\nSettings in Data/ were not intentionally deleted."); return 1; }

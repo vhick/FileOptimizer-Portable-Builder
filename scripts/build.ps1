@@ -7,7 +7,7 @@ Set-Location $repoRoot
 if ($ReleaseVersion -ne 'latest' -and $ReleaseVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw 'release_version must be latest or an official three-part version such as 17.30.2881.'
 }
-$headers = @{ 'User-Agent'='FileOptimizer-Portable-Community-Builder/1.1' }
+$headers = @{ 'User-Agent'='FileOptimizer-Portable-Community-Builder/1.2' }
 if ($ExpectedSha256 -and $ExpectedSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
     throw 'expected_sha256 must be blank or exactly 64 hexadecimal characters.'
 }
@@ -83,7 +83,7 @@ $data = Join-Path $stage 'Data'
 $srcDir = Join-Path $stage 'Other/Source'
 if (Test-Path $work) { Remove-Item -LiteralPath $work -Recurse -Force }
 if (Test-Path $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $work,$stage,$app,$appInfo,$data,$srcDir,$dist, (Join-Path $data 'Settings'),(Join-Path $data 'Logs'),(Join-Path $data 'Temp') | Out-Null
+New-Item -ItemType Directory -Force -Path $work,$stage,$app,$appInfo,$data,$srcDir,$dist, (Join-Path $data 'Settings'),(Join-Path $data 'Logs'),(Join-Path $data 'Temp'),(Join-Path $data 'Browser'),(Join-Path $data 'TraceGuard') | Out-Null
 $archive = Join-Path $work $asset
 # All retry URLs are official SourceForge endpoints; never fetch from third-party sites.
 # SourceForge documents ?use_mirror as its supported mirror-switching mechanism.
@@ -161,7 +161,7 @@ $icon = Join-Path $appInfo 'appicon.ico'
 $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 if (-not (Test-Path -LiteralPath $csc)) { throw 'Windows .NET Framework C# compiler not found.' }
 $launcher = Join-Path $stage 'FileOptimizerPortable.exe'
-& $csc /nologo /target:winexe /platform:anycpu /optimize+ "/out:$launcher" "/win32icon:$icon" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Security.dll (Join-Path $repoRoot 'launcher/FileOptimizerPortable.cs')
+& $csc /nologo /target:winexe /platform:anycpu /optimize+ "/out:$launcher" "/win32icon:$icon" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Security.dll (Join-Path $repoRoot 'launcher/FileOptimizerPortable.cs') (Join-Path $repoRoot 'launcher/TraceGuard.cs')
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcher)) { throw 'Compiling the native root launcher failed.' }
 Add-Type -AssemblyName System.Drawing
 foreach($size in @(16,32,75,128,256)) {
@@ -208,6 +208,7 @@ Icons=1
 Start=FileOptimizerPortable.exe
 "@ | Set-Content -LiteralPath (Join-Path $appInfo 'appinfo.ini') -Encoding ASCII
 Copy-Item -LiteralPath (Join-Path $repoRoot 'launcher/FileOptimizerPortable.cs') -Destination $srcDir
+Copy-Item -LiteralPath (Join-Path $repoRoot 'launcher/TraceGuard.cs') -Destination $srcDir
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Extract-OfficialIcon.ps1') -Destination $srcDir
 @"
 FileOptimizer portable build
@@ -217,6 +218,7 @@ Release version: $version
 Source code (maintained): https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/
 Build approach: official precompiled SFX extracted as an archive; neither installed nor executed on runner.
 Root launcher: .NET Framework 4.8 Windows executable with original embedded icon.
+TraceGuard v1.2: scoped before/after filesystem and registry snapshots, WebView2 redirect, application-specific registry restoration, conservative recovery into Data/TraceGuard.
 Original application: unmodified FileOptimizer64.exe and all adjacent plugins.
 "@ | Set-Content -LiteralPath (Join-Path $stage 'Other/BUILD-MANIFEST.txt') -Encoding UTF8
 @'
@@ -229,6 +231,10 @@ Refresh icons in PortableApps Menu; look for FileOptimizer Portable.
 Always start FileOptimizerPortable.exe from the root folder.
 It stores the INI and logs in Data\Settings and Data\Logs after exiting,
 and points the optimizer's temporary child-process environment into Data\Temp.
+TraceGuard writes per-run reports to Data\Logs\TraceGuard-*.txt, and redirects
+supported WebView2 browser data to Data\Browser\WebView2.
+Only newly created FileOptimizer-named host directories are automatically recovered
+into Data\TraceGuard\Recovered; unrelated files and registry keys are not deleted.
 For upgrades replace only root launcher, App, Other. KEEP Data.
 
 SAFETY: This program optimizes/replaces the files YOU choose. It can modify
@@ -238,7 +244,9 @@ First test on copies of important files. Keep original files in Recycle Bin
 software installation folders, personal archives, or backups without spare copies.
 Disable optional shell/context-menu registration to avoid host changes.
 
-LIMITS: FileOptimizer can read existing registry overrides; it normally doesn't
+LIMITS: TraceGuard uses targeted before/after snapshots, NOT a system-wide
+process event monitor. It cannot prove origin of every host cache or event.
+FileOptimizer can read existing registry overrides; it normally doesn't
 write its own registry options. Third-party plugin components may make Windows
 caches/traces outside Data. Zero-remnant behavior needs an actual PC audit.
 Do not start App\FileOptimizer\FileOptimizer64.exe directly: settings isolation
