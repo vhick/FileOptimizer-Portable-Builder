@@ -86,4 +86,29 @@ class TraceGuardTests(unittest.TestCase):
     def test_packaging_mentions_traceguard(self):
         source=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
         self.assertIn('TraceGuard writes per-run reports',source)
-        self.assertIn('TraceGuard v1.2:',source)
+        self.assertIn('TraceGuard v1.2 (retained in builder v1.3):',source)
+
+
+class IconExtractorV13Tests(unittest.TestCase):
+    def test_windows_resource_name_handling(self):
+        src=(ROOT/'scripts/Extract-OfficialIcon.ps1').read_text(encoding='utf-8')
+        self.assertIn('Marshal.PtrToStringUni(ptr)',src)
+        self.assertIn('CopyFromCallback(ptr)',src)
+        self.assertIn('FindResourceByName',src)
+        self.assertIn('FindResourceById',src)
+        self.assertNotIn('if(groupName==IntPtr.Zero) groupName=name',src)
+    def test_original_icon_only_and_fallback(self):
+        src=(ROOT/'scripts/Extract-OfficialIcon.ps1').read_text(encoding='utf-8')
+        self.assertIn('RT_GROUP_ICON',src)
+        self.assertIn('RT_ICON',src)
+        self.assertIn('FallbackExePath',src)
+        self.assertIn('No generic icon was substituted',src)
+        builder=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        self.assertIn("Join-Path $app 'FileOptimizer32.exe'",builder)
+    def test_fallback_release_and_newline_fix(self):
+        builder=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        self.assertIn("return '18.00.2889'",builder)
+        self.assertNotIn('`nWrite-Host',builder)
+    def test_preflight_step(self):
+        workflow=(ROOT/'.github/workflows/build-fileoptimizer-portable.yml').read_text(encoding='utf-8')
+        self.assertIn('Smoke test icon extraction',workflow)

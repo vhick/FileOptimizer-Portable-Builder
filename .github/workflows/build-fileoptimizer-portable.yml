@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'latest or official SourceForge version (example: 17.30.2881)'
+        description: 'latest or official SourceForge version (example: 18.00.2889)'
         required: true
         default: 'latest'
         type: string
@@ -26,6 +26,12 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest discover -s tests -v
+      - name: Smoke test icon extraction on Windows
+        shell: pwsh
+        run: |
+          # Verify the Windows resource API code before downloading 110+ MB.
+          $sample = Join-Path $env:WINDIR 'System32\shell32.dll'
+          ./scripts/Extract-OfficialIcon.ps1 -ExePath $sample -OutputPath (Join-Path $env:RUNNER_TEMP 'vendor-icon-smoke.ico')
       - name: Build and verify official portable ZIP
         shell: pwsh
         env:

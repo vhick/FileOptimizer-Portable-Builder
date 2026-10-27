@@ -1,4 +1,4 @@
-# FileOptimizer True Portable Builder — v1.2
+# FileOptimizer True Portable Builder — v1.3 (icon fix)
 
 ## What it builds
 
@@ -30,7 +30,7 @@ FileOptimizerPortable/
 └── START-HERE.txt
 ```
 
-### TraceGuard v1.2 — what is (and is not) monitored
+### TraceGuard v1.2 (unchanged in builder v1.3) — what is (and is not) monitored
 
 TraceGuard is integrated into the launcher. You do not have to install a driver, start
 PowerShell, or run an external tracking program. On every root-launcher session it takes
@@ -61,17 +61,25 @@ for detailed attribution, use Microsoft Sysinternals Process Monitor manually.
 **This is not a certified zero-host-traces build.** A Windows runtime test with a full
 optimization job is still needed. Logs contain filesystem paths: review before sharing.
 
+### Fix in v1.3 — icon error on FileOptimizer 18.00.2889
+
+The Oct 27, 2026 GitHub Actions failure occurred **after the official archive passed validation and extraction**. The old icon extractor retained a resource-name pointer returned by Windows and used it outside the enumeration callback. Windows may return **numeric** icon IDs or temporary **Unicode string** pointers; reusing a string pointer can make a later `FindResourceW` call fail with `Missing icon resource type 14`.
+
+v1.3 copies icon names during enumeration, handles both numeric and string names, and tries additional vendor icon groups. If the upstream 64-bit executable's icon cannot be recovered, it tries the **original vendor 32-bit binary**, if bundled. It never silently uses the generic Windows application icon. A Windows icon-extraction smoke test now runs before the large SourceForge download. This kit was statically tested; a GitHub Windows runner still needs to validate the updated extractor and completed build.
+
+The executable launcher and TraceGuard v1.2 are intentionally **unchanged**, including the Data folder and cleanup rules. A separate PowerShell final-log formatting issue has also been fixed.
+
 ### Correct official source
 
-Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkhokkho/files/FileOptimizer/) and [maintained source tree](https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/), **not the 2015-era svn2github mirror**. Current confirmed release is `17.30.2881` (Oct 20, 2026). The builder downloads `FileOptimizerFull.7z.exe` (official non-installer), verifies a publisher-listed or manually supplied SHA-256 **when available**; otherwise records its computed SHA-256 and performs official HTTPS, 7-Zip integrity, and package-structure checks (these are NOT equivalent to independent checksum verification); then unpacks it using 7-Zip **without running the self-extractor or installer**. Building the actual Embarcadero C++Builder code is unnecessary and not attempted.
+Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkhokkho/files/FileOptimizer/) and [maintained source tree](https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/), **not the 2015-era svn2github mirror**. Current confirmed release is `18.00.2889` (Oct 25, 2026). The builder downloads `FileOptimizerFull.7z.exe` (official non-installer), verifies a publisher-listed or manually supplied SHA-256 **when available**; otherwise records its computed SHA-256 and performs official HTTPS, 7-Zip integrity, and package-structure checks (these are NOT equivalent to independent checksum verification); then unpacks it using 7-Zip **without running the self-extractor or installer**. Building the actual Embarcadero C++Builder code is unnecessary and not attempted.
 
 ### Steps in GitHub
 
-1. Create a repository, e.g. `FileOptimizer-Portable-Builder`.
-2. Extract **this builder kit** ZIP and copy all contents into the repository. Include the `.github/` folder.
-3. Commit and push in GitHub Desktop.
+1. Open your existing `vhick/FileOptimizer-Portable-Builder` repository folder in GitHub Desktop (no need for a new repository).
+2. Extract **this v1.3 builder kit** ZIP and copy all files into that local folder, overwriting existing builder files; include the hidden `.github/` folder.
+3. In GitHub Desktop, confirm the changed files, enter commit summary `Fix FileOptimizer 18 icon export (v1.3)`, and select **Commit to main** then **Push origin**.
 4. Open the repository **Actions** tab; choose **Build FileOptimizer Portable (Manual)**.
-5. Click **Run workflow** and use `release_version=17.30.2881` (recommended first test). You may choose `latest` later; if SourceForge version discovery is blocked, the builder uses its last confirmed release as a clearly labeled fallback. The optional `expected_sha256` field is blank by default.
+5. Click **Run workflow** and use `release_version=18.00.2889` (recommended first test). You may choose `latest` later; if SourceForge version discovery is blocked, the builder uses its last confirmed release as a clearly labeled fallback. The optional `expected_sha256` field is blank by default.
 6. When the job succeeds, download the artifact `FileOptimizerPortable-Windows-x64`.
 7. Extract the **inner** `FileOptimizerPortable-<version>-x64.zip` to `X:\PortableApps\` (the directory containing `PortableApps.com`).
 8. Refresh PortableApps Menu icons and start **FileOptimizer Portable**.
@@ -93,7 +101,7 @@ Use [SourceForge FileOptimizer releases](https://sourceforge.net/projects/nikkho
 
 ### Checks and troubleshooting
 
-- **v1.1 fixes SourceForge 403 on the checksum webpage (retained in v1.2).** If a published checksum is accessible, the builder verifies it. The earlier 17.20.2876 pinned hash is retained. A manually supplied `expected_sha256` is always checked against the downloaded file.
+- **v1.1 fixes SourceForge 403 on the checksum webpage (retained in v1.3).** If a published checksum is accessible, the builder verifies it. The earlier 17.20.2876 pinned hash is retained. A manually supplied `expected_sha256` is always checked against the downloaded file.
 - **Important security distinction:** When SourceForge blocks checksum retrieval and no independent expected hash is provided, v1.1 can still build from the official HTTPS release after a 7-Zip archive test, executable/plugin checks and recording the download's calculated SHA-256. This does **not** independently authenticate the archive. The build log and `Other/BUILD-MANIFEST.txt` say `OFFICIAL-HTTPS-UNPINNED` in that case. For a fully hash-verified build, obtain the SHA-256 from the official SourceForge file detail screen and paste it into the optional `expected_sha256` workflow field; mismatches fail immediately.
 - Any future version still depends on the upstream archive format. The builder does not run the publisher's self-extracting installer.
 - It tests the official archive with `7z t`, then checks the extracted vendor `FileOptimizer64.exe`, `Plugins64/`, official icon, compiled launcher, AppInfo metadata and output ZIP structure.

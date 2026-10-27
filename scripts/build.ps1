@@ -7,7 +7,7 @@ Set-Location $repoRoot
 if ($ReleaseVersion -ne 'latest' -and $ReleaseVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw 'release_version must be latest or an official three-part version such as 17.30.2881.'
 }
-$headers = @{ 'User-Agent'='FileOptimizer-Portable-Community-Builder/1.2' }
+$headers = @{ 'User-Agent'='FileOptimizer-Portable-Community-Builder/1.3' }
 if ($ExpectedSha256 -and $ExpectedSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
     throw 'expected_sha256 must be blank or exactly 64 hexadecimal characters.'
 }
@@ -36,8 +36,8 @@ function Resolve-ReleaseVersion {
     if ($versions.Count -eq 0) {
         # Pinned fallback only when SourceForge blocks both discovery endpoints.
         # This is NOT proof of the newest release; it is a known specific release.
-        Write-Warning 'SourceForge version discovery unavailable. Falling back to last confirmed 17.30.2881; it may not be the newest release.'
-        return '17.30.2881'
+        Write-Warning 'SourceForge version discovery unavailable. Falling back to last confirmed 18.00.2889; it may not be the newest release.'
+        return '18.00.2889'
     }
     $sorted = @($versions | Sort-Object -Unique | Sort-Object { [version]$_ } -Descending)
     return [string]$sorted[0]
@@ -155,9 +155,11 @@ foreach($name in @('FileOptimizer.ini','FileOptimizer64.ini','FileOptimizer32.in
         Move-Item -LiteralPath $p -Destination (Join-Path $data $sub) -Force
     }
 }
-# Preserve exact original embedded multi-resolution icon from the current official binary.
+# Prefer the original 64-bit vendor icon; if the upstream 64-bit executable
+# does not expose a usable icon group, try the vendor's own 32-bit binary.
+# No fallback to generic Windows icons is allowed.
 $icon = Join-Path $appInfo 'appicon.ico'
-& (Join-Path $PSScriptRoot 'Extract-OfficialIcon.ps1') -ExePath (Join-Path $app 'FileOptimizer64.exe') -OutputPath $icon
+& (Join-Path $PSScriptRoot 'Extract-OfficialIcon.ps1') -ExePath (Join-Path $app 'FileOptimizer64.exe') -FallbackExePath (Join-Path $app 'FileOptimizer32.exe') -OutputPath $icon
 $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 if (-not (Test-Path -LiteralPath $csc)) { throw 'Windows .NET Framework C# compiler not found.' }
 $launcher = Join-Path $stage 'FileOptimizerPortable.exe'
@@ -218,7 +220,7 @@ Release version: $version
 Source code (maintained): https://sourceforge.net/p/nikkhokkho/code/HEAD/tree/
 Build approach: official precompiled SFX extracted as an archive; neither installed nor executed on runner.
 Root launcher: .NET Framework 4.8 Windows executable with original embedded icon.
-TraceGuard v1.2: scoped before/after filesystem and registry snapshots, WebView2 redirect, application-specific registry restoration, conservative recovery into Data/TraceGuard.
+TraceGuard v1.2 (retained in builder v1.3): scoped before/after filesystem and registry snapshots, WebView2 redirect, application-specific registry restoration, conservative recovery into Data/TraceGuard.
 Original application: unmodified FileOptimizer64.exe and all adjacent plugins.
 "@ | Set-Content -LiteralPath (Join-Path $stage 'Other/BUILD-MANIFEST.txt') -Encoding UTF8
 @'
@@ -270,4 +272,5 @@ try {
     }
 } finally { $z.Dispose() }
 Write-Host "SUCCESS: $zip"
-Write-Host "Source verification: $verificationLevel; SHA256 $actual"`nWrite-Host 'Windows GUI and full plugin portability must still be tested on the target PC.'
+Write-Host "Source verification: $verificationLevel; SHA256 $actual"
+Write-Host 'Windows GUI and full plugin portability must still be tested on the target PC.'
